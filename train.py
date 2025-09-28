@@ -9,7 +9,9 @@ def build_lm_dataset(pathtoparquet: str, tokenizer, block_size: int = 1024):
     构建语言模型数据集：加载、分词并按固定长度块分组。
     """
     # 1. 加载原始数据
-    raw = load_dataset(path="parquet")
+    raw = load_dataset(
+            path=pathtoparquet,
+            streaming=True)
     
     # 2. 分词函数（注意：tokenizer 必须返回 input_ids 等字段）
     def tokenize_function(examples):
@@ -23,7 +25,6 @@ def build_lm_dataset(pathtoparquet: str, tokenizer, block_size: int = 1024):
         tokenize_function,
         batched=True,
         remove_columns=raw["train"].column_names,  # 移除原始列，只保留 tokenized 字段
-        desc="Tokenizing dataset",
     )
 
     # 3. 按块分组函数：将所有文本拼接成一个长序列，再切成固定长度的块
@@ -53,7 +54,6 @@ def build_lm_dataset(pathtoparquet: str, tokenizer, block_size: int = 1024):
     lm_dataset = tokenized.map(
         group_texts,
         batched=True,
-        desc=f"Grouping texts into blocks of {block_size}",
     )
 
     return lm_dataset
@@ -67,8 +67,8 @@ def train(pathtotok: str, pathtoparquet: str, pathtosave: str):
     tokenizer = AutoTokenizer.from_pretrained(pathtotok)
     
     # 2. 检查是否已设置 pad_token，GPT-2 默认没有 padding token
-    if tokenizer.pad_token is None:
-        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    #if tokenizer.pad_token is None:
+    #    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     # 3. 构建数据集
     ds = build_lm_dataset(pathtoparquet, tokenizer, block_size=512)  # 可根据显存调整
@@ -78,9 +78,9 @@ def train(pathtotok: str, pathtoparquet: str, pathtosave: str):
         vocab_size=tokenizer.vocab_size,
         n_positions=512,       # 与 block_size 对齐
         n_ctx=512,
-        n_embd=768,            # 可根据需求调整
-        n_layer=12,
-        n_head=12,
+        n_embd=128,            # 可根据需求调整
+        n_layer=8,
+        n_head=16,
     )
     
     model = GPT2LMHeadModel(model_config)
@@ -94,7 +94,7 @@ def train(pathtotok: str, pathtoparquet: str, pathtosave: str):
     # 6. 设置训练参数（关键！）
     train_args = TrainingArguments(
         output_dir=pathtosave,               # 模型保存路径
-        evaluation_strategy="epoch",         # 每个 epoch 评估一次
+        eval_strategy="no",         # 每个 epoch 评估一次
         learning_rate=2e-5,                  # 学习率
         per_device_train_batch_size=8,       # 根据显存调整（如 16/32）
         per_device_eval_batch_size=8,
@@ -102,10 +102,11 @@ def train(pathtotok: str, pathtoparquet: str, pathtosave: str):
         weight_decay=0.01,
         logging_dir="./logs",                # 日志目录
         save_strategy="epoch",
-        load_best_model_at_end=True,         # 保存最佳模型
-        metric_for_best_model="eval_loss",   # 根据验证损失选择最优模型
-        report_to="tensorboard",
+        #load_best_model_at_end=True,         # 保存最佳模型
+        #metric_for_best_model="eval_loss",   # 根据验证损失选择最优模型
+        #report_to="tensorboard",
         gradient_accumulation_steps=4,       # 梯度累积，节省显存
+        max_steps=10_0000,
     )
 
     # 7. 创建 Trainer 实例（注意：参数顺序和名称要正确）
@@ -126,3 +127,6 @@ def train(pathtotok: str, pathtoparquet: str, pathtosave: str):
     tokenizer.save_pretrained(pathtosave)
 
     print(f"✅ 模型已保存至: {pathtosave}")
+
+if __name__ == '__main__':
+    train('phi4_tok', 'datasets/tinyshakespear/', 'trained_model')
