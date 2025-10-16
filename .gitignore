@@ -209,3 +209,4 @@ __marimo__/
 *.tar.gz
 trained_model/
 logs/
+._*
